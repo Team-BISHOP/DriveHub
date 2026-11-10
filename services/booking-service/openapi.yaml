@@ -1,0 +1,93 @@
+openapi: 3.0.3
+info:
+  title: Booking Service
+  version: 1.0.0
+  description: Search and book vehicles, pickup and return (business scenarios 1 and 4).
+servers:
+  - url: http://localhost:3002
+paths:
+  /bookings:
+    get:
+      summary: List bookings
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, CONFIRMED, PICKED_UP, RETURNED, CANCELLED] } }
+      responses:
+        "200": { description: List of bookings, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Booking" } } } } }
+    post:
+      summary: Create a booking (checks Fleet service and prevents double booking)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BookingInput" } } }
+      responses:
+        "201": { description: Created (status PENDING until paid), content: { application/json: { schema: { $ref: "#/components/schemas/Booking" } } } }
+        "400": { description: Validation failed }
+        "404": { description: Vehicle not found }
+        "409": { description: Vehicle unavailable or already booked }
+        "503": { description: Fleet service unavailable }
+  /bookings/{id}:
+    get:
+      summary: Get one booking
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The booking, content: { application/json: { schema: { $ref: "#/components/schemas/Booking" } } } }
+        "404": { description: Not found }
+  /bookings/{id}/cancel:
+    post:
+      summary: Cancel a PENDING or CONFIRMED booking
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Cancelled, content: { application/json: { schema: { $ref: "#/components/schemas/Booking" } } } }
+        "409": { description: Booking cannot be cancelled in its current status }
+  /bookings/{id}/pickup:
+    post:
+      summary: Customer picks up the vehicle (booking must be CONFIRMED)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Picked up, content: { application/json: { schema: { $ref: "#/components/schemas/Booking" } } } }
+        "409": { description: Booking is not CONFIRMED }
+  /bookings/{id}/return:
+    post:
+      summary: Customer returns the vehicle (calculates the late fee)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                returnDate: { type: string, example: "2026-11-20", description: Optional, simulates a return date for demos }
+      responses:
+        "200": { description: Returned, content: { application/json: { schema: { $ref: "#/components/schemas/Booking" } } } }
+        "409": { description: Booking is not PICKED_UP }
+components:
+  schemas:
+    BookingInput:
+      type: object
+      required: [vehicleId, customerName, customerEmail, startDate, endDate]
+      properties:
+        vehicleId: { type: integer, example: 1 }
+        customerName: { type: string, example: Nimal Perera }
+        customerEmail: { type: string, example: nimal@example.com }
+        startDate: { type: string, example: "2026-11-15" }
+        endDate: { type: string, example: "2026-11-18" }
+    Booking:
+      type: object
+      properties:
+        id: { type: integer }
+        vehicleId: { type: integer }
+        customerName: { type: string }
+        customerEmail: { type: string }
+        startDate: { type: string }
+        endDate: { type: string }
+        dailyRate: { type: number }
+        totalPrice: { type: number }
+        deposit: { type: number }
+        lateFee: { type: number }
+        status: { type: string, enum: [PENDING, CONFIRMED, PICKED_UP, RETURNED, CANCELLED] }
+        pickedUpAt: { type: string, nullable: true }
+        returnedAt: { type: string, nullable: true }

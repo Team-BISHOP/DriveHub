@@ -1,0 +1,10 @@
+# dependencies and build output
+node_modules/
+dist/
+# local secrets (never commit)
+.env
+# editor and OS clutter
+.vscode/
+.idea/
+.DS_Store
+*.log

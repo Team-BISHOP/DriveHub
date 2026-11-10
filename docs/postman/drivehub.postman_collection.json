@@ -1,0 +1,353 @@
+{
+  "info": {
+    "name": "DriveHub",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "fleet",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "booking",
+      "value": "http://localhost:3002"
+    },
+    {
+      "key": "payment",
+      "value": "http://localhost:3003"
+    },
+    {
+      "key": "notification",
+      "value": "http://localhost:3004"
+    },
+    {
+      "key": "vehicleId",
+      "value": ""
+    },
+    {
+      "key": "bookingId",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Fleet (scenario 3)",
+      "item": [
+        {
+          "name": "Add vehicle",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"vehicleId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{fleet}}/vehicles"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"make\": \"Toyota\",\n  \"model\": \"Prius\",\n  \"year\": 2022,\n  \"category\": \"CAR\",\n  \"plate\": \"CAB-{{$randomInt}}\",\n  \"dailyRate\": 45\n}"
+            }
+          }
+        },
+        {
+          "name": "List available vehicles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{fleet}}/vehicles?status=AVAILABLE"
+            }
+          }
+        },
+        {
+          "name": "Update price",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{fleet}}/vehicles/{{vehicleId}}"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dailyRate\": 50\n}"
+            }
+          }
+        },
+        {
+          "name": "Send to maintenance",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{fleet}}/vehicles/{{vehicleId}}/status"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"MAINTENANCE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Back to available",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{fleet}}/vehicles/{{vehicleId}}/status"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Booking (scenario 1)",
+      "item": [
+        {
+          "name": "Create booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"bookingId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{booking}}/bookings"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"customerName\": \"Nimal Perera\",\n  \"customerEmail\": \"nimal@example.com\",\n  \"startDate\": \"2030-01-10\",\n  \"endDate\": \"2030-01-13\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get booking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{booking}}/bookings/{{bookingId}}"
+            }
+          }
+        },
+        {
+          "name": "List bookings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{booking}}/bookings"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Payment (scenario 2)",
+      "item": [
+        {
+          "name": "Find payment for booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"paymentId\", pm.response.json()[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{payment}}/payments?bookingId={{bookingId}}"
+            }
+          }
+        },
+        {
+          "name": "Pay (declined card)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{payment}}/payments/{{paymentId}}/pay"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"cardNumber\": \"4000000000000000\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Pay (accepted card)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{payment}}/payments/{{paymentId}}/pay"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"cardNumber\": \"4242424242424242\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Pickup and return (scenario 4)",
+      "item": [
+        {
+          "name": "Pick up vehicle",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{booking}}/bookings/{{bookingId}}/pickup"
+            }
+          }
+        },
+        {
+          "name": "Return vehicle (2 days late)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{booking}}/bookings/{{bookingId}}/return"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"returnDate\": \"2030-01-15\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Cancel booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{booking}}/bookings/{{bookingId}}/cancel"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Notifications (scenario 5)",
+      "item": [
+        {
+          "name": "Notifications for booking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{notification}}/notifications?bookingId={{bookingId}}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

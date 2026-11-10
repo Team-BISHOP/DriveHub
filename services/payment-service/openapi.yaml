@@ -1,0 +1,56 @@
+openapi: 3.0.3
+info:
+  title: Payment Service
+  version: 1.0.0
+  description: Mock payments, deposits and refunds (business scenario 2). A payment request is created automatically when a booking is created.
+servers:
+  - url: http://localhost:3003
+paths:
+  /payments:
+    get:
+      summary: List payments
+      parameters:
+        - { name: bookingId, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: List of payments, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Payment" } } } } }
+  /payments/{id}:
+    get:
+      summary: Get one payment
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The payment, content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } } }
+        "404": { description: Not found }
+  /payments/{id}/pay:
+    post:
+      summary: Pay a PENDING or FAILED payment (mock gateway, card numbers ending in 0000 are declined)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                method: { type: string, enum: [CARD, CASH] }
+                cardNumber: { type: string, example: "4242424242424242" }
+      responses:
+        "200": { description: Paid, content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } } }
+        "402": { description: Card declined, content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } } }
+        "404": { description: Not found }
+        "409": { description: Payment already settled }
+components:
+  schemas:
+    Payment:
+      type: object
+      properties:
+        id: { type: integer }
+        bookingId: { type: integer }
+        customerEmail: { type: string }
+        amount: { type: number, description: Rental price plus deposit }
+        deposit: { type: number }
+        refundAmount: { type: number }
+        status: { type: string, enum: [PENDING, PAID, FAILED, CANCELLED, REFUNDED, DEPOSIT_RETURNED] }
+        method: { type: string, nullable: true }

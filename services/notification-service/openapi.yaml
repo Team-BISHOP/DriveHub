@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: Notification Service
+  version: 1.0.0
+  description: Listens to booking and payment events and records the notifications sent (business scenario 5). Delivery is mocked and printed to the log.
+servers:
+  - url: http://localhost:3004
+paths:
+  /notifications:
+    get:
+      summary: List notifications
+      parameters:
+        - { name: bookingId, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    event: { type: string, example: booking.confirmed }
+                    bookingId: { type: integer }
+                    recipient: { type: string }
+                    message: { type: string }
+                    sentAt: { type: string }

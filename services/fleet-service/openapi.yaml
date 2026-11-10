@@ -1,0 +1,81 @@
+openapi: 3.0.3
+info:
+  title: Fleet Service
+  version: 1.0.0
+  description: Vehicles, pricing and availability (business scenario 3).
+servers:
+  - url: http://localhost:3001
+paths:
+  /vehicles:
+    get:
+      summary: List vehicles
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [AVAILABLE, MAINTENANCE, RETIRED] } }
+        - { name: category, in: query, schema: { type: string } }
+      responses:
+        "200": { description: List of vehicles, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Vehicle" } } } } }
+    post:
+      summary: Add a vehicle
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/VehicleInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Vehicle" } } } }
+        "400": { description: Validation failed }
+        "409": { description: Plate already exists }
+  /vehicles/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: Get one vehicle
+      responses:
+        "200": { description: The vehicle, content: { application/json: { schema: { $ref: "#/components/schemas/Vehicle" } } } }
+        "404": { description: Not found }
+    put:
+      summary: Update vehicle details or price (any subset of fields)
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/VehicleInput" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Vehicle" } } } }
+        "404": { description: Not found }
+    delete:
+      summary: Delete a vehicle
+      responses:
+        "204": { description: Deleted }
+        "404": { description: Not found }
+  /vehicles/{id}/status:
+    patch:
+      summary: Enable or block a vehicle
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [AVAILABLE, MAINTENANCE, RETIRED] }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Vehicle" } } } }
+        "404": { description: Not found }
+components:
+  schemas:
+    VehicleInput:
+      type: object
+      required: [make, model, year, category, plate, dailyRate]
+      properties:
+        make: { type: string, example: Toyota }
+        model: { type: string, example: Prius }
+        year: { type: integer, example: 2022 }
+        category: { type: string, example: CAR }
+        plate: { type: string, example: CAB-1234 }
+        dailyRate: { type: number, example: 45 }
+    Vehicle:
+      allOf:
+        - $ref: "#/components/schemas/VehicleInput"
+        - type: object
+          properties:
+            id: { type: integer }
+            status: { type: string, enum: [AVAILABLE, MAINTENANCE, RETIRED] }

@@ -74,5 +74,24 @@ services:
       postgres: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
 
+  analytics-service:
+    build: ./services/analytics-service
+    ports: ["3005:3005"]
+    environment:
+      PORT: 3005
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/analyticsdb
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+      FLEET_URL: http://fleet-service:3001
+      BOOKING_URL: http://booking-service:3002
+      PAYMENT_URL: http://payment-service:3003
+      NOTIFY_URL: http://notification-service:3004
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      fleet-service: { condition: service_started }
+      booking-service: { condition: service_started }
+      payment-service: { condition: service_started }
+      notification-service: { condition: service_started }
+
 volumes:
   pgdata:

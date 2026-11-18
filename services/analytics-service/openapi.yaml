@@ -1,0 +1,66 @@
+openapi: 3.0.3
+info:
+  title: Analytics Service
+  version: 1.0.0
+  description: Event-driven business intelligence and fleet metrics service. Aggregates financial revenue, fleet utilization, and RabbitMQ message counters.
+servers:
+  - url: http://localhost:3005
+paths:
+  /analytics/summary:
+    get:
+      summary: Get high-level business and revenue metrics
+      responses:
+        "200":
+          description: Summary metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  grossRevenue: { type: number }
+                  totalRefunds: { type: number }
+                  netRevenue: { type: number }
+                  lateFeesCollected: { type: number }
+                  totalBookings: { type: integer }
+                  confirmedBookings: { type: integer }
+                  activeRentals: { type: integer }
+                  completedRentals: { type: integer }
+                  cancelledBookings: { type: integer }
+                  failedPayments: { type: integer }
+                  fleetTotal: { type: integer }
+                  fleetUtilization: { type: number }
+  /analytics/events:
+    get:
+      summary: Get RabbitMQ event message throughput counters
+      responses:
+        "200":
+          description: Event counter items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    event: { type: string }
+                    count: { type: integer }
+                    lastOccurred: { type: string }
+  /analytics/financial-stream:
+    get:
+      summary: Recent financial audit ledger
+      responses:
+        "200":
+          description: List of financial transaction events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    event: { type: string }
+                    bookingId: { type: integer }
+                    customerEmail: { type: string }
+                    amount: { type: number }
+                    createdAt: { type: string }

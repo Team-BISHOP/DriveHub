@@ -4,3 +4,4 @@ CREATE DATABASE fleetdb;
 CREATE DATABASE bookingdb;
 CREATE DATABASE paymentdb;
 CREATE DATABASE notificationdb;
+CREATE DATABASE analyticsdb;

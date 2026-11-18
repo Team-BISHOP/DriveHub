@@ -20,6 +20,7 @@ Booking ──────────► Fleet
 | booking-service | 3002 | bookingdb | 1. Book a vehicle, 4. Pickup and return |
 | payment-service | 3003 | paymentdb | 2. Online payment and deposit |
 | notification-service | 3004 | notificationdb | 5. Booking notifications |
+| analytics-service | 3005 | analyticsdb | Business Intelligence, Live Revenue & Fleet Metrics |
 
 Each service owns its database and never reads another service's tables. Services talk by REST (Booking asks Fleet about a vehicle) and by events (everything else).
 
@@ -33,7 +34,7 @@ docker compose up --build
 
 The first start takes a minute or two (images and installs). Then open:
 
-- Swagger UI per service: http://localhost:3001/docs, :3002/docs, :3003/docs, :3004/docs
+- Swagger UI per service: http://localhost:3001/docs, :3002/docs, :3003/docs, :3004/docs, :3005/docs
 - RabbitMQ dashboard: http://localhost:15672 (guest / guest)
 - Smoke test of the whole flow: `node scripts/e2e.mjs`
 - Postman: import `docs/postman/drivehub.postman_collection.json` and run the folders in order

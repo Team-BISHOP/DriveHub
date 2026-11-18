@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+}
+
+@media print {
+  @page {
+    margin: 10mm;
+    size: auto;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}

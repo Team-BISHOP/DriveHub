@@ -4,6 +4,7 @@ const FLEET = process.env.FLEET ?? "http://localhost:3001";
 const BOOKING = process.env.BOOKING ?? "http://localhost:3002";
 const PAYMENT = process.env.PAYMENT ?? "http://localhost:3003";
 const NOTIFY = process.env.NOTIFY ?? "http://localhost:3004";
+const ANALYTICS = process.env.ANALYTICS ?? "http://localhost:3005";
 
 let failed = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -217,6 +218,13 @@ check(
   JSON.stringify(events),
 );
 if (notes) console.log("      " + events.join(" -> "));
+
+// Analytics verification
+const analytics = await waitFor(async () => {
+  const r = await call("GET", `${ANALYTICS}/analytics/summary`);
+  return r.status === 200 && r.body.totalBookings > 0 ? r.body : null;
+});
+check("analytics: aggregated summary and revenue", !!analytics, JSON.stringify(analytics));
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nAll checks passed");
 process.exit(failed ? 1 : 0);

@@ -38,6 +38,7 @@ The first start takes a minute or two (images and installs). Then open:
 - RabbitMQ dashboard: http://localhost:15672 (guest / guest)
 - Smoke test of the whole flow: `node scripts/e2e.mjs`
 - Postman: import `docs/postman/drivehub.postman_collection.json` and run the folders in order
+- Testing of Each service node --test tests/unit/serviceName.test.mjs
 
 Stop with `Ctrl+C`. Wipe the databases with `docker compose down -v`.
 

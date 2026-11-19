@@ -7,10 +7,15 @@ import { z } from "zod";
 import { pool, waitForDb } from "./db";
 import { connectBroker, publish, subscribe } from "./events";
 
+let publishEvent = publish;
+export function setPublishForTests(handler: typeof publish): void {
+    publishEvent = handler;
+}
+
 const PORT = Number(process.env.PORT ?? 3003);
 const RABBITMQ_URL = process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672";
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 const spec = YAML.parse(fs.readFileSync(path.join(__dirname, "..", "openapi.yaml"), "utf8"));
@@ -40,6 +45,43 @@ const idParam = (req: Request) => {
     if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, "Invalid id");
     return id;
 };
+
+export async function handleBookingEvent(key: string, event: any): Promise<void> {
+    if (key === "booking.created") {
+        await pool.query(
+            `INSERT INTO payments (booking_id, customer_email, amount, deposit)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (booking_id) DO NOTHING`,
+            [event.bookingId, event.customerEmail, money(event.totalPrice + event.deposit), event.deposit]
+        );
+        return;
+    }
+
+    const { rows } = await pool.query("SELECT * FROM payments WHERE booking_id = $1", [event.bookingId]);
+    const payment = rows[0];
+    if (!payment) return;
+
+    if (key === "booking.cancelled") {
+        if (payment.status === "PAID") {
+            await pool.query("UPDATE payments SET status='REFUNDED', refund_amount=amount, updated_at=now() WHERE id=$1", [payment.id]);
+            publishEvent("payment.refunded", {
+                paymentId: payment.id, bookingId: payment.booking_id, customerEmail: payment.customer_email,
+                refundAmount: payment.amount, reason: "Booking cancelled",
+            });
+        } else if (["PENDING", "FAILED"].includes(payment.status)) {
+            await pool.query("UPDATE payments SET status='CANCELLED', updated_at=now() WHERE id=$1", [payment.id]);
+        }
+        return;
+    }
+
+    if (key === "booking.returned" && payment.status === "PAID") {
+        const refund = Math.max(0, money(payment.deposit - event.lateFee));
+        await pool.query("UPDATE payments SET status='DEPOSIT_RETURNED', refund_amount=$2, updated_at=now() WHERE id=$1", [payment.id, refund]);
+        publishEvent("payment.refunded", {
+            paymentId: payment.id, bookingId: payment.booking_id, customerEmail: payment.customer_email,
+            refundAmount: refund, reason: event.lateFee > 0 ? `Deposit returned minus late fee of ${event.lateFee}` : "Deposit returned",
+        });
+    }
+}
 
 // ---------- routes ----------
 app.get("/health", (_req, res) => res.json({ status: "ok", service: "payment-service" }));
@@ -87,8 +129,8 @@ app.post("/payments/:id/pay", async (req, res) => {
     const out = upd.rows[0];
 
     const base = { paymentId: out.id, bookingId: out.booking_id, customerEmail: out.customer_email, amount: out.amount };
-    if (declined) publish("payment.failed", { ...base, reason: "Card declined" });
-    else publish("payment.completed", base);
+    if (declined) publishEvent("payment.failed", { ...base, reason: "Card declined" });
+    else publishEvent("payment.completed", base);
 
     res.status(declined ? 402 : 200).json(toPayment(out));
 });
@@ -120,49 +162,13 @@ async function main() {
 
     await connectBroker(RABBITMQ_URL);
 
-    await subscribe("payment-service.q", ["booking.created", "booking.cancelled", "booking.returned"], async (key, e) => {
-        // A new booking creates a payment request: rental price + refundable deposit
-        if (key === "booking.created") {
-            await pool.query(
-                `INSERT INTO payments (booking_id, customer_email, amount, deposit)
-         VALUES ($1,$2,$3,$4) ON CONFLICT (booking_id) DO NOTHING`,
-                [e.bookingId, e.customerEmail, money(e.totalPrice + e.deposit), e.deposit]
-            );
-            return;
-        }
-
-        const { rows } = await pool.query("SELECT * FROM payments WHERE booking_id = $1", [e.bookingId]);
-        const p = rows[0];
-        if (!p) return;
-
-        // Booking cancelled: refund everything if already paid, otherwise just close the request
-        if (key === "booking.cancelled") {
-            if (p.status === "PAID") {
-                await pool.query("UPDATE payments SET status='REFUNDED', refund_amount=amount, updated_at=now() WHERE id=$1", [p.id]);
-                publish("payment.refunded", {
-                    paymentId: p.id, bookingId: p.booking_id, customerEmail: p.customer_email,
-                    refundAmount: p.amount, reason: "Booking cancelled",
-                });
-            } else if (["PENDING", "FAILED"].includes(p.status)) {
-                await pool.query("UPDATE payments SET status='CANCELLED', updated_at=now() WHERE id=$1", [p.id]);
-            }
-            return;
-        }
-
-        // Vehicle returned: give the deposit back minus any late fee
-        if (key === "booking.returned" && p.status === "PAID") {
-            const refund = Math.max(0, money(p.deposit - e.lateFee));
-            await pool.query("UPDATE payments SET status='DEPOSIT_RETURNED', refund_amount=$2, updated_at=now() WHERE id=$1", [p.id, refund]);
-            publish("payment.refunded", {
-                paymentId: p.id, bookingId: p.booking_id, customerEmail: p.customer_email,
-                refundAmount: refund, reason: e.lateFee > 0 ? `Deposit returned minus late fee of ${e.lateFee}` : "Deposit returned",
-            });
-        }
-    });
+    await subscribe("payment-service.q", ["booking.created", "booking.cancelled", "booking.returned"], handleBookingEvent);
 
     app.listen(PORT, () => console.log(`payment-service on :${PORT} (docs at /docs)`));
 }
-main().catch((e) => {
-    console.error(e);
-    process.exit(1);
-});
+if (process.env.NODE_ENV !== "test") {
+    main().catch((e) => {
+        console.error(e);
+        process.exit(1);
+    });
+}

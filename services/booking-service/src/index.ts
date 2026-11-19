@@ -7,6 +7,11 @@ import { z } from "zod";
 import { pool, waitForDb } from "./db";
 import { connectBroker, publish, subscribe } from "./events";
 
+let publishEvent = publish;
+export function setPublishForTests(handler: typeof publish): void {
+    publishEvent = handler;
+}
+
 const PORT = Number(process.env.PORT ?? 3002);
 const FLEET_URL = process.env.FLEET_URL ?? "http://localhost:3001";
 const RABBITMQ_URL = process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672";
@@ -14,7 +19,7 @@ const RABBITMQ_URL = process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5
 const DEPOSIT_RATE = 0.2; // deposit = 20% of the rental price
 const LATE_FEE_MULTIPLIER = 1.5; // each late day costs 1.5x the daily rate
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 const spec = YAML.parse(fs.readFileSync(path.join(__dirname, "..", "openapi.yaml"), "utf8"));
@@ -59,6 +64,14 @@ async function getBooking(id: number) {
     const { rows } = await pool.query("SELECT * FROM bookings WHERE id = $1", [id]);
     if (!rows[0]) throw new HttpError(404, "Booking not found");
     return rows[0];
+}
+
+export async function handlePaymentCompleted(booking: { bookingId: number }): Promise<void> {
+    const { rows } = await pool.query(
+        "UPDATE bookings SET status='CONFIRMED' WHERE id=$1 AND status='PENDING' RETURNING *",
+        [booking.bookingId]
+    );
+    if (rows[0]) publishEvent("booking.confirmed", { bookingId: rows[0].id, customerEmail: rows[0].customer_email });
 }
 
 // ---------- routes ----------
@@ -125,7 +138,7 @@ app.post("/bookings", async (req, res) => {
     }
 
     // 3) Tell the other services (Payment will create a payment request)
-    publish("booking.created", {
+    publishEvent("booking.created", {
         bookingId: row.id,
         customerEmail: row.customer_email,
         totalPrice: row.total_price,
@@ -153,7 +166,7 @@ app.post("/bookings/:id/cancel", async (req, res) => {
     const b = await getBooking(idParam(req));
     if (!["PENDING", "CONFIRMED"].includes(b.status)) throw new HttpError(409, `Cannot cancel a ${b.status} booking`);
     const { rows } = await pool.query("UPDATE bookings SET status='CANCELLED' WHERE id=$1 RETURNING *", [b.id]);
-    publish("booking.cancelled", { bookingId: b.id, customerEmail: b.customer_email });
+    publishEvent("booking.cancelled", { bookingId: b.id, customerEmail: b.customer_email });
     res.json(toBooking(rows[0]));
 });
 
@@ -162,7 +175,7 @@ app.post("/bookings/:id/pickup", async (req, res) => {
     const b = await getBooking(idParam(req));
     if (b.status !== "CONFIRMED") throw new HttpError(409, `Only CONFIRMED (paid) bookings can be picked up, this one is ${b.status}`);
     const { rows } = await pool.query("UPDATE bookings SET status='PICKED_UP', picked_up_at=now() WHERE id=$1 RETURNING *", [b.id]);
-    publish("booking.picked_up", { bookingId: b.id, customerEmail: b.customer_email });
+    publishEvent("booking.picked_up", { bookingId: b.id, customerEmail: b.customer_email });
     res.json(toBooking(rows[0]));
 });
 
@@ -177,7 +190,7 @@ app.post("/bookings/:id/return", async (req, res) => {
         "UPDATE bookings SET status='RETURNED', returned_at=now(), late_fee=$2 WHERE id=$1 RETURNING *",
         [b.id, lateFee]
     );
-    publish("booking.returned", {
+    publishEvent("booking.returned", {
         bookingId: b.id,
         customerEmail: b.customer_email,
         deposit: b.deposit,
@@ -219,17 +232,13 @@ async function main() {
     await connectBroker(RABBITMQ_URL);
 
     // When payment succeeds, the booking becomes CONFIRMED
-    await subscribe("booking-service.q", ["payment.completed"], async (_key, p) => {
-        const { rows } = await pool.query(
-            "UPDATE bookings SET status='CONFIRMED' WHERE id=$1 AND status='PENDING' RETURNING *",
-            [p.bookingId]
-        );
-        if (rows[0]) publish("booking.confirmed", { bookingId: rows[0].id, customerEmail: rows[0].customer_email });
-    });
+    await subscribe("booking-service.q", ["payment.completed"], async (_key, p) => handlePaymentCompleted(p));
 
     app.listen(PORT, () => console.log(`booking-service on :${PORT} (docs at /docs)`));
 }
-main().catch((e) => {
-    console.error(e);
-    process.exit(1);
-});
+if (process.env.NODE_ENV !== "test") {
+    main().catch((e) => {
+        console.error(e);
+        process.exit(1);
+    });
+}

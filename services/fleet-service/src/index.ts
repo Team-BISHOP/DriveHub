@@ -7,7 +7,7 @@ import { z } from "zod";
 import { pool, waitForDb } from "./db";
 
 const PORT = Number(process.env.PORT ?? 3001);
-const app = express();
+export const app = express();
 app.use(express.json());
 
 // Interactive API docs at /docs, loaded from openapi.yaml
@@ -147,7 +147,9 @@ async function main() {
     )`);
     app.listen(PORT, () => console.log(`fleet-service on :${PORT} (docs at /docs)`));
 }
-main().catch((e) => {
-    console.error(e);
-    process.exit(1);
-});
+if (process.env.NODE_ENV !== "test") {
+    main().catch((e) => {
+        console.error(e);
+        process.exit(1);
+    });
+}

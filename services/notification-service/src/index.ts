@@ -9,7 +9,7 @@ import { connectBroker, subscribe } from "./events";
 const PORT = Number(process.env.PORT ?? 3004);
 const RABBITMQ_URL = process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672";
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 const spec = YAML.parse(fs.readFileSync(path.join(__dirname, "..", "openapi.yaml"), "utf8"));
@@ -17,7 +17,7 @@ app.use("/docs", swaggerUi.serve, swaggerUi.setup(spec));
 
 // Turn an event into a human-readable message.
 // To support a new event, add one line here and bind its routing key in main().
-function buildMessage(key: string, e: any): string {
+export function buildMessage(key: string, e: any): string {
     switch (key) {
         case "booking.created":
             return `Booking #${e.bookingId} received. Please pay ${e.totalPrice + e.deposit} (includes a refundable deposit of ${e.deposit}).`;
@@ -40,6 +40,16 @@ function buildMessage(key: string, e: any): string {
         default:
             return `Update for booking #${e.bookingId}: ${key}`;
     }
+}
+
+export async function handleNotificationEvent(key: string, event: any): Promise<void> {
+    const message = buildMessage(key, event);
+    const recipient = event.customerEmail ?? "unknown";
+    await pool.query(
+        "INSERT INTO notifications (event, booking_id, recipient, message) VALUES ($1,$2,$3,$4)",
+        [key, event.bookingId ?? null, recipient, message]
+    );
+    console.log(`[EMAIL to ${recipient}] ${message}`);
 }
 
 // Scenario 5: list the notifications that were sent
@@ -85,20 +95,13 @@ async function main() {
     await connectBroker(RABBITMQ_URL);
 
     // Listen to every booking.* and payment.* event
-    await subscribe("notification-service.q", ["booking.*", "payment.*"], async (key, e) => {
-        const message = buildMessage(key, e);
-        const recipient = e.customerEmail ?? "unknown";
-        await pool.query(
-            "INSERT INTO notifications (event, booking_id, recipient, message) VALUES ($1,$2,$3,$4)",
-            [key, e.bookingId ?? null, recipient, message]
-        );
-        // Mock delivery: a real system would call an email or SMS provider here
-        console.log(`[EMAIL to ${recipient}] ${message}`);
-    });
+    await subscribe("notification-service.q", ["booking.*", "payment.*"], handleNotificationEvent);
 
     app.listen(PORT, () => console.log(`notification-service on :${PORT} (docs at /docs)`));
 }
-main().catch((e) => {
-    console.error(e);
-    process.exit(1);
-});
+if (process.env.NODE_ENV !== "test") {
+    main().catch((e) => {
+        console.error(e);
+        process.exit(1);
+    });
+}

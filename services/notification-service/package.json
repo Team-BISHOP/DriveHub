@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "test": "tsx --test ../../tests/unit/notification.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

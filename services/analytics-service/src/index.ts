@@ -10,7 +10,7 @@ const PORT = Number(process.env.PORT ?? 3005);
 const FLEET_URL = process.env.FLEET_URL ?? "http://localhost:3001";
 const RABBITMQ_URL = process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672";
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 const spec = YAML.parse(fs.readFileSync(path.join(__dirname, "..", "openapi.yaml"), "utf8"));
@@ -137,7 +137,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ error: "Internal server error" });
 });
 
-async function syncHistoricalData(): Promise<number> {
+export async function syncHistoricalData(): Promise<number> {
     try {
         const bookingUrls = [process.env.BOOKING_URL, "http://booking-service:3002", "http://localhost:3002"].filter(Boolean) as string[];
         const paymentUrls = [process.env.PAYMENT_URL, "http://payment-service:3003", "http://localhost:3003"].filter(Boolean) as string[];
@@ -273,6 +273,25 @@ async function syncHistoricalData(): Promise<number> {
     }
 }
 
+export async function handleAnalyticsEvent(key: string, payload: any): Promise<void> {
+    let amount = 0;
+    if (key === "payment.completed") amount = Number(payload.amount ?? 0);
+    else if (key === "payment.refunded") amount = Number(payload.refundAmount ?? 0);
+    else if (key === "booking.returned") amount = Number(payload.lateFee ?? 0);
+
+    await pool.query(
+        `INSERT INTO analytics_events (event, booking_id, customer_email, amount, payload)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+            key,
+            payload.bookingId ?? null,
+            payload.customerEmail ?? "unknown",
+            amount,
+            JSON.stringify(payload),
+        ]
+    );
+}
+
 async function main() {
     await waitForDb();
     await pool.query(`
@@ -294,29 +313,14 @@ async function main() {
     await connectBroker(RABBITMQ_URL);
 
     // Listen to all events published in DriveHub
-    await subscribe("analytics-service.q", ["booking.*", "payment.*"], async (key, payload) => {
-        let amount = 0;
-        if (key === "payment.completed") amount = Number(payload.amount ?? 0);
-        else if (key === "payment.refunded") amount = Number(payload.refundAmount ?? 0);
-        else if (key === "booking.returned") amount = Number(payload.lateFee ?? 0);
-
-        await pool.query(
-            `INSERT INTO analytics_events (event, booking_id, customer_email, amount, payload)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-                key,
-                payload.bookingId ?? null,
-                payload.customerEmail ?? "unknown",
-                amount,
-                JSON.stringify(payload),
-            ]
-        );
-    });
+    await subscribe("analytics-service.q", ["booking.*", "payment.*"], handleAnalyticsEvent);
 
     app.listen(PORT, () => console.log(`analytics-service on :${PORT} (docs at /docs)`));
 }
 
-main().catch((err) => {
-    console.error("analytics-service failed to start:", err);
-    process.exit(1);
-});
+if (process.env.NODE_ENV !== "test") {
+    main().catch((err) => {
+        console.error("analytics-service failed to start:", err);
+        process.exit(1);
+    });
+}

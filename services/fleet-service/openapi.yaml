@@ -23,6 +23,28 @@ paths:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Vehicle" } } } }
         "400": { description: Validation failed }
         "409": { description: Plate already exists }
+  /vehicles/upload:
+    post:
+      summary: Upload a vehicle image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image: { type: string, format: binary }
+      responses:
+        "201":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imageUrl: { type: string, example: /uploads/1700000000000-123456.jpg }
+        "400": { description: Invalid or missing image file }
   /vehicles/{id}:
     parameters:
       - { name: id, in: path, required: true, schema: { type: integer } }
@@ -38,6 +60,7 @@ paths:
       responses:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Vehicle" } } } }
         "404": { description: Not found }
+        "409": { description: Plate already exists }
     delete:
       summary: Delete a vehicle
       responses:
@@ -72,6 +95,7 @@ components:
         category: { type: string, example: CAR }
         plate: { type: string, example: CAB-1234 }
         dailyRate: { type: number, example: 45 }
+        imageUrl: { type: string, nullable: true, example: /uploads/car.jpg }
     Vehicle:
       allOf:
         - $ref: "#/components/schemas/VehicleInput"

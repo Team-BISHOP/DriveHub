@@ -36,6 +36,8 @@ services:
     environment:
       PORT: 3001
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/fleetdb
+    volumes:
+      - fleet_uploads:/app/uploads
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -95,3 +97,4 @@ services:
 
 volumes:
   pgdata:
+  fleet_uploads:

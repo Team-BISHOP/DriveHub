@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Car, PlusCircle, ArrowUpRight } from 'lucide-react';
 import type { Vehicle } from '../types';
+import { resolveFleetImageUrl } from '../api/client';
 import { BookingModal } from './BookingModal';
 
 interface VehiclesTabProps {
@@ -19,6 +20,7 @@ export const VehiclesTab: React.FC<VehiclesTabProps> = ({
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [bookingVehicle, setBookingVehicle] = useState<Vehicle | null>(null);
+  const [brokenImages, setBrokenImages] = useState<Record<number, boolean>>({});
 
   // Categories extraction
   const categories = ['ALL', ...Array.from(new Set(vehicles.map((v) => v.category.toUpperCase())))];
@@ -129,13 +131,31 @@ export const VehiclesTab: React.FC<VehiclesTabProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredVehicles.map((v) => {
             const isAvailable = v.status === 'AVAILABLE';
+            const imgSrc = !brokenImages[v.id] ? resolveFleetImageUrl(v.imageUrl) : null;
             return (
               <div
                 key={v.id}
-                className="group bg-white border border-slate-300 hover:border-slate-500 shadow-xs transition-all flex flex-col justify-between"
+                className="group bg-white border border-slate-300 hover:border-slate-500 shadow-xs transition-all flex flex-col justify-between overflow-hidden"
               >
+                {/* Vehicle Photo */}
+                <div className="h-44 w-full bg-slate-100 border-b border-slate-200 overflow-hidden flex items-center justify-center">
+                  {imgSrc ? (
+                    <img
+                      src={imgSrc}
+                      alt={`${v.make} ${v.model}`}
+                      onError={() => setBrokenImages((prev) => ({ ...prev, [v.id]: true }))}
+                      className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 text-slate-400">
+                      <Car className="w-8 h-8 text-slate-300" />
+                      <span className="text-[10px] font-mono uppercase tracking-wider">No Photo</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Card Top */}
-                <div className="p-5 space-y-3">
+                <div className="p-5 space-y-3 flex-1">
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2">

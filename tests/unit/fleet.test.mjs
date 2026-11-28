@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { createRequire } from "node:module";
 
 process.env.NODE_ENV = "test";
@@ -16,7 +18,7 @@ async function withServer(run) {
 }
 
 const vehicle = { make: "Toyota", model: "Corolla", year: 2026, category: "CAR", plate: "ABC123", dailyRate: 55 };
-const vehicleRow = { id: 1, ...vehicle, daily_rate: 55, status: "AVAILABLE" };
+const vehicleRow = { id: 1, ...vehicle, daily_rate: 55, image_url: null, status: "AVAILABLE" };
 const json = (body, method = "POST") => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 test("health endpoint", async () => withServer(async (url) => {
@@ -40,7 +42,7 @@ test("creates vehicle and maps database columns to API shape", async () => {
         await withServer(async (url) => {
             const response = await fetch(`${url}/vehicles`, json(vehicle));
             assert.equal(response.status, 201);
-            assert.deepEqual(await response.json(), { id: 1, make: "Toyota", model: "Corolla", year: 2026, category: "CAR", plate: "ABC123", dailyRate: 55, status: "AVAILABLE" });
+            assert.deepEqual(await response.json(), { id: 1, make: "Toyota", model: "Corolla", year: 2026, category: "CAR", plate: "ABC123", dailyRate: 55, imageUrl: null, status: "AVAILABLE" });
         });
     } finally { pool.query = original; }
 });
@@ -150,4 +152,67 @@ test("delete returns 204 for found vehicle and 404 for missing vehicle", async (
             assert.equal((await fetch(`${url}/vehicles/nope`, { method: "DELETE" })).status, 400);
         });
     } finally { pool.query = original; }
+});
+
+test("supports imageUrl on create/update and rejects invalid imageUrl", async () => {
+    const original = pool.query;
+    const calls = [];
+    pool.query = async (sql, params) => {
+        calls.push({ sql, params });
+        return { rows: [{ ...vehicleRow, image_url: params[params.length - 1] ?? null }], rowCount: 1 };
+    };
+    try {
+        await withServer(async (url) => {
+            const bad = await fetch(`${url}/vehicles`, json({ ...vehicle, imageUrl: "ftp://bad.example/a.png" }));
+            assert.equal(bad.status, 400);
+
+            const created = await fetch(`${url}/vehicles`, json({ ...vehicle, imageUrl: "/uploads/test.jpg" }));
+            assert.equal(created.status, 201);
+            assert.equal((await created.json()).imageUrl, "/uploads/test.jpg");
+
+            const cleared = await fetch(`${url}/vehicles/1`, json({ imageUrl: null }, "PUT"));
+            assert.equal(cleared.status, 200);
+            assert.equal(calls[1].params[7], true);
+            assert.equal(calls[1].params[8], null);
+        });
+    } finally { pool.query = original; }
+});
+
+test("duplicate plate on update returns conflict", async () => {
+    const original = pool.query;
+    pool.query = async () => { const error = new Error("duplicate"); error.code = "23505"; throw error; };
+    try {
+        await withServer(async (url) => {
+            const response = await fetch(`${url}/vehicles/1`, json({ plate: "DUP-1" }, "PUT"));
+            assert.equal(response.status, 409);
+        });
+    } finally { pool.query = original; }
+});
+
+test("upload endpoint stores image and rejects invalid or missing files", async () => {
+    let uploadedPath = null;
+    try {
+        await withServer(async (url) => {
+            const emptyRes = await fetch(`${url}/vehicles/upload`, { method: "POST", body: new FormData() });
+            assert.equal(emptyRes.status, 400);
+
+            const badForm = new FormData();
+            badForm.append("image", new Blob(["hello"], { type: "text/plain" }), "note.txt");
+            const badRes = await fetch(`${url}/vehicles/upload`, { method: "POST", body: badForm });
+            assert.equal(badRes.status, 400);
+
+            const okForm = new FormData();
+            okForm.append("image", new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }), "car.png");
+            const okRes = await fetch(`${url}/vehicles/upload`, { method: "POST", body: okForm });
+            assert.equal(okRes.status, 201);
+            const body = await okRes.json();
+            assert.match(body.imageUrl, /^\/uploads\/.+\.png$/);
+            uploadedPath = path.join(process.cwd(), "services", "fleet-service", body.imageUrl.replace(/^\//, ""));
+
+            const fetched = await fetch(`${url}${body.imageUrl}`);
+            assert.equal(fetched.status, 200);
+        });
+    } finally {
+        if (uploadedPath && fs.existsSync(uploadedPath)) fs.unlinkSync(uploadedPath);
+    }
 });

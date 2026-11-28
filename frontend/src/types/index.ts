@@ -9,6 +9,7 @@ export interface Vehicle {
   category: string;
   plate: string;
   dailyRate: number;
+  imageUrl?: string | null;
   status: VehicleStatus;
 }
 

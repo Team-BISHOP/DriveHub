@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Pencil, Trash2, Upload, Car, X } from 'lucide-react';
 import type { Vehicle, VehicleStatus } from '../types';
-import { fleetApi } from '../api/client';
+import { fleetApi, resolveFleetImageUrl } from '../api/client';
 
 interface FleetTabProps {
   vehicles: Vehicle[];
@@ -9,18 +9,73 @@ interface FleetTabProps {
   onRefresh: () => void;
 }
 
+const randomPlate = () => 'WP-CAB-' + Math.floor(1000 + Math.random() * 9000);
+
 export const FleetTab: React.FC<FleetTabProps> = ({ vehicles, loading, onRefresh }) => {
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [modalMode, setModalMode] = useState<'add' | 'edit' | null>(null);
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [deletingVehicle, setDeletingVehicle] = useState<Vehicle | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const [make, setMake] = useState('Toyota');
   const [model, setModel] = useState('Axio');
   const [year, setYear] = useState(2023);
   const [category, setCategory] = useState('CAR');
-  const [plate, setPlate] = useState('WP-CAB-' + Math.floor(1000 + Math.random() * 9000));
+  const [plate, setPlate] = useState(randomPlate);
   const [dailyRate, setDailyRate] = useState(45);
+  const [imageUrl, setImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const openAddModal = () => {
+    setEditingVehicle(null);
+    setMake('Toyota');
+    setModel('Axio');
+    setYear(2023);
+    setCategory('CAR');
+    setPlate(randomPlate());
+    setDailyRate(45);
+    setImageUrl('');
+    setModalError(null);
+    setModalMode('add');
+  };
+
+  const openEditModal = (v: Vehicle) => {
+    setEditingVehicle(v);
+    setMake(v.make);
+    setModel(v.model);
+    setYear(v.year);
+    setCategory(v.category.toUpperCase());
+    setPlate(v.plate);
+    setDailyRate(v.dailyRate);
+    setImageUrl(v.imageUrl ?? '');
+    setModalError(null);
+    setModalMode('edit');
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    setEditingVehicle(null);
+    setModalError(null);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setUploadingImage(true);
+      setModalError(null);
+      const { imageUrl: uploadedUrl } = await fleetApi.uploadImage(file);
+      setImageUrl(uploadedUrl);
+    } catch (err: any) {
+      setModalError(err.message || 'Failed to upload image.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const handleStatusChange = async (vehicleId: number, newStatus: VehicleStatus) => {
     try {
@@ -35,28 +90,53 @@ export const FleetTab: React.FC<FleetTabProps> = ({ vehicles, loading, onRefresh
     }
   };
 
-  const handleAddVehicle = async (e: React.FormEvent) => {
+  const handleSaveVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setSubmitting(true);
-      setErrorMsg(null);
-      await fleetApi.createVehicle({
+      setModalError(null);
+      const trimmedImage = imageUrl.trim();
+      const payload = {
         make: make.trim(),
         model: model.trim(),
         year: Number(year),
         category: category.trim().toUpperCase(),
         plate: plate.trim().toUpperCase(),
         dailyRate: Number(dailyRate),
-      });
-      setShowAddModal(false);
-      setPlate('WP-CAB-' + Math.floor(1000 + Math.random() * 9000));
+        imageUrl: trimmedImage ? trimmedImage : null,
+      };
+
+      if (modalMode === 'edit' && editingVehicle) {
+        await fleetApi.updateVehicle(editingVehicle.id, payload);
+      } else {
+        await fleetApi.createVehicle(payload);
+      }
+      closeModal();
       onRefresh();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to add vehicle. Duplicate plate number or invalid input.');
+      setModalError(err.message || 'Failed to save vehicle. Duplicate plate number or invalid input.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingVehicle) return;
+    try {
+      setUpdatingId(deletingVehicle.id);
+      setErrorMsg(null);
+      await fleetApi.deleteVehicle(deletingVehicle.id);
+      setDeletingVehicle(null);
+      onRefresh();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to delete vehicle.');
+      setDeletingVehicle(null);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const previewSrc = resolveFleetImageUrl(imageUrl.trim() || null);
 
   return (
     <div className="space-y-6">
@@ -97,7 +177,7 @@ export const FleetTab: React.FC<FleetTabProps> = ({ vehicles, loading, onRefresh
           )}
 
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={openAddModal}
             className="px-4 py-2 text-xs font-bold uppercase text-white bg-slate-950 hover:bg-slate-800 border border-slate-950 flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Add Vehicle
@@ -140,13 +220,26 @@ export const FleetTab: React.FC<FleetTabProps> = ({ vehicles, loading, onRefresh
                   </td>
                 </tr>
               ) : (
-                vehicles.map((v) => (
+                vehicles.map((v) => {
+                  const thumbSrc = resolveFleetImageUrl(v.imageUrl);
+                  return (
                   <tr key={v.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-950 uppercase">
-                        {v.make} {v.model}
+                      <div className="flex items-center gap-3">
+                        <div className="w-14 h-10 bg-slate-100 border border-slate-300 shrink-0 overflow-hidden flex items-center justify-center">
+                          {thumbSrc ? (
+                            <img src={thumbSrc} alt={`${v.make} ${v.model}`} className="w-full h-full object-cover" />
+                          ) : (
+                            <Car className="w-4 h-4 text-slate-400" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-950 uppercase">
+                            {v.make} {v.model}
+                          </div>
+                          <span className="text-[11px] text-slate-500">Year {v.year} • ID #{v.id}</span>
+                        </div>
                       </div>
-                      <span className="text-[11px] text-slate-500">Year {v.year} • ID #{v.id}</span>
                     </td>
                     <td className="py-3.5 px-4">
                       <span className="px-2 py-0.5 bg-slate-100 text-slate-800 border border-slate-300 font-bold">
@@ -169,7 +262,7 @@ export const FleetTab: React.FC<FleetTabProps> = ({ vehicles, loading, onRefresh
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      <div className="inline-flex items-center gap-1.5">
+                      <div className="inline-flex items-center gap-1.5 flex-wrap justify-end">
                         {v.status !== 'AVAILABLE' && (
                           <button
                             onClick={() => handleStatusChange(v.id, 'AVAILABLE')}
@@ -197,34 +290,104 @@ export const FleetTab: React.FC<FleetTabProps> = ({ vehicles, loading, onRefresh
                             Retire
                           </button>
                         )}
+                        <button
+                          onClick={() => openEditModal(v)}
+                          disabled={updatingId === v.id}
+                          title="Edit vehicle"
+                          className="px-2.5 py-1 text-[11px] font-bold uppercase text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Pencil className="w-3 h-3" /> Edit
+                        </button>
+                        <button
+                          onClick={() => setDeletingVehicle(v)}
+                          disabled={updatingId === v.id}
+                          title="Delete vehicle"
+                          className="px-2.5 py-1 text-[11px] font-bold uppercase text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" /> Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Add Vehicle Modal */}
-      {showAddModal && (
+      {/* Add / Edit Vehicle Modal */}
+      {modalMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs font-mono">
-          <div className="bg-white max-w-md w-full border border-slate-400 shadow-2xl overflow-hidden">
+          <div className="bg-white max-w-md w-full border border-slate-400 shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-300 bg-slate-100 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-950">Add Vehicle to Fleet</h3>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-950">
+                  {modalMode === 'edit' ? `Edit Vehicle #${editingVehicle?.id}` : 'Add Vehicle to Fleet'}
+                </h3>
                 <p className="text-xs text-slate-600">Fleet Service • PostgreSQL: fleetdb</p>
               </div>
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={closeModal}
                 className="text-slate-500 hover:text-slate-950 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleAddVehicle} className="p-6 space-y-3.5">
+            <form onSubmit={handleSaveVehicle} className="p-6 space-y-3.5">
+              {modalError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-300 text-xs text-rose-900">
+                  {modalError}
+                </div>
+              )}
+
+              {/* Vehicle Image Upload / URL */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase text-slate-700">Vehicle Photo</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-24 h-16 bg-slate-100 border border-slate-300 shrink-0 overflow-hidden flex items-center justify-center relative">
+                    {previewSrc ? (
+                      <img src={previewSrc} alt="Vehicle preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <Car className="w-6 h-6 text-slate-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <label className="px-3 py-1.5 text-[11px] font-bold uppercase bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-300 inline-flex items-center gap-1.5 cursor-pointer">
+                        <Upload className="w-3.5 h-3.5" />
+                        {uploadingImage ? 'Uploading...' : 'Upload Image'}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          disabled={uploadingImage}
+                          onChange={handleImageUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      {imageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setImageUrl('')}
+                          className="px-2 py-1.5 text-[11px] font-bold uppercase text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-300 inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <X className="w-3 h-3" /> Clear
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      placeholder="Or paste https://... image URL"
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 focus:outline-hidden focus:border-slate-950 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Make</label>
@@ -307,20 +470,63 @@ export const FleetTab: React.FC<FleetTabProps> = ({ vehicles, loading, onRefresh
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={closeModal}
                   className="px-4 py-2 text-xs font-bold uppercase text-slate-700 hover:text-slate-950 border border-slate-300 hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-white bg-slate-950 border border-slate-950 hover:bg-slate-800 cursor-pointer"
+                  disabled={submitting || uploadingImage}
+                  className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-white bg-slate-950 border border-slate-950 hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
                 >
-                  {submitting ? 'Adding...' : 'Save Vehicle'}
+                  {submitting ? 'Saving...' : modalMode === 'edit' ? 'Update Vehicle' : 'Save Vehicle'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingVehicle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs font-mono">
+          <div className="bg-white max-w-sm w-full border border-slate-400 shadow-2xl overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-slate-300 bg-rose-50 flex items-center justify-between">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-rose-950">Delete Vehicle</h3>
+              <button
+                onClick={() => setDeletingVehicle(null)}
+                className="text-rose-700 hover:text-rose-950 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <p>
+                Remove{' '}
+                <span className="font-bold text-slate-950 uppercase">
+                  {deletingVehicle.make} {deletingVehicle.model} ({deletingVehicle.plate})
+                </span>{' '}
+                from the fleet? This action cannot be undone.
+              </p>
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setDeletingVehicle(null)}
+                  className="px-4 py-2 text-xs font-bold uppercase text-slate-700 border border-slate-300 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={updatingId === deletingVehicle.id}
+                  className="px-4 py-2 text-xs font-bold uppercase text-white bg-rose-700 hover:bg-rose-800 border border-rose-800 disabled:opacity-50 cursor-pointer"
+                >
+                  {updatingId === deletingVehicle.id ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

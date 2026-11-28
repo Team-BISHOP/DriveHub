@@ -29,6 +29,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 // ---------------- Fleet API ----------------
+export function resolveFleetImageUrl(imageUrl?: string | null): string | null {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('/uploads/')) return `/api/fleet${imageUrl}`;
+  return imageUrl;
+}
+
 export const fleetApi = {
   checkHealth: async (): Promise<boolean> => {
     try {
@@ -50,6 +56,16 @@ export const fleetApi = {
     return handleResponse<Vehicle>(res);
   },
 
+  uploadImage: async (file: File): Promise<{ imageUrl: string }> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const res = await fetch('/api/fleet/vehicles/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse<{ imageUrl: string }>(res);
+  },
+
   createVehicle: async (payload: {
     make: string;
     model: string;
@@ -57,9 +73,30 @@ export const fleetApi = {
     category: string;
     plate: string;
     dailyRate: number;
+    imageUrl?: string | null;
   }): Promise<Vehicle> => {
     const res = await fetch('/api/fleet/vehicles', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<Vehicle>(res);
+  },
+
+  updateVehicle: async (
+    id: number,
+    payload: Partial<{
+      make: string;
+      model: string;
+      year: number;
+      category: string;
+      plate: string;
+      dailyRate: number;
+      imageUrl: string | null;
+    }>
+  ): Promise<Vehicle> => {
+    const res = await fetch(`/api/fleet/vehicles/${id}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
@@ -73,6 +110,13 @@ export const fleetApi = {
       body: JSON.stringify({ status }),
     });
     return handleResponse<Vehicle>(res);
+  },
+
+  deleteVehicle: async (id: number): Promise<void> => {
+    const res = await fetch(`/api/fleet/vehicles/${id}`, {
+      method: 'DELETE',
+    });
+    await handleResponse<void>(res);
   },
 };
 
